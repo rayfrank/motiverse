@@ -1,9 +1,9 @@
 node_modules/
 .next/
 out/
-dist/
-build/
-.env*
-.DS_Store
-*.log
-.vercel/
+.env
+.env.local
+.env.*.local
+
+# optional: if this folder is a nested repo or accidental
+MotiverseFinal/
