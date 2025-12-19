@@ -255,13 +255,22 @@ export default function DashboardPage() {
         <div className="mt-8 max-w-xl">
           <h2 className="text-xl font-semibold mb-2">Report an Incident</h2>
           <p className="text-sm opacity-90 mb-3">
-            Report issues such as harassment, burnout risk, or workplace stress
-            anonymously.
+            If you are in immediate danger or need urgent help, contact emergency services.
           </p>
-          <button className="px-4 py-2 rounded accent-bg hover:opacity-90 font-semibold text-sm border accent-border">
-            Report Incident
+
+          <button
+            onClick={callKenyaEmergency}
+            className="px-4 py-2 rounded accent-bg hover:opacity-90 font-semibold text-sm border accent-border"
+          >
+            Call Emergency (911)
           </button>
+
+          <p className="mt-2 text-[11px] opacity-75">
+            This button opens your phone dialer with 911.
+          </p>
         </div>
+
+
       </section>
     </main>
   );
@@ -275,6 +284,16 @@ function Info({ label, value }: { label: string; value: string }) {
     </p>
   );
 }
+const callKenyaEmergency = () => {
+  const ok = confirm(
+    "This will open your phone dialer and call emergency services (911). Use only for urgent emergencies. Continue?"
+  );
+  if (ok) {
+    window.location.href = "tel:911";
+  }
+};
+
+
 
 function LabeledInput({
   label,
