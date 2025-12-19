@@ -1,3 +1,4 @@
+// app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
 
@@ -6,15 +7,17 @@ export const metadata: Metadata = {
   description: "Employee wellness and engagement platform",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      {/* No hard-coded bg here; body uses CSS vars from globals.css */}
-      <body className="text-white">{children}</body>
+      <body className="text-white min-h-screen w-full overflow-x-hidden">
+        {children}
+      </body>
     </html>
   );
 }

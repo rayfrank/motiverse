@@ -2,17 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sidebar } from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { BackToDashboard } from "@/components/BackToDashboard";
 import { auth, db } from "@/lib/firebaseClient";
-import {
-  addDoc,
-  collection,
-  onSnapshot,
-  query,
-  where,
-  Timestamp,
-} from "firebase/firestore";
+import { addDoc, collection, onSnapshot, query, where, Timestamp } from "firebase/firestore";
 
 type Bookmark = {
   id: string;
@@ -35,7 +28,6 @@ export default function BookmarksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Auth + subscribe
   useEffect(() => {
     const unsubAuth = auth.onAuthStateChanged((user) => {
       if (!user) {
@@ -45,22 +37,14 @@ export default function BookmarksPage() {
 
       setUserId(user.uid);
 
-      const ref = collection(db, "bookmarks");
-      const q = query(ref, where("userId", "==", user.uid));
+      const q = query(collection(db, "bookmarks"), where("userId", "==", user.uid));
 
       const unsubBookmarks = onSnapshot(
         q,
         (snap) => {
           const list: Bookmark[] = [];
-          snap.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...(docSnap.data() as any) });
-          });
-
-          // sort newest first
-          list.sort(
-            (a, b) =>
-              b.createdAt.toMillis() - a.createdAt.toMillis()
-          );
+          snap.forEach((docSnap) => list.push({ id: docSnap.id, ...(docSnap.data() as any) }));
+          list.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
           setBookmarks(list);
           setLoading(false);
         },
@@ -82,8 +66,7 @@ export default function BookmarksPage() {
     if (!userId || !label.trim() || !url.trim()) return;
 
     try {
-      const ref = collection(db, "bookmarks");
-      await addDoc(ref, {
+      await addDoc(collection(db, "bookmarks"), {
         label: label.trim(),
         url: url.trim(),
         note: note.trim(),
@@ -101,9 +84,8 @@ export default function BookmarksPage() {
   };
 
   return (
-    <main className="flex h-screen body-bg text-white">
-      <Sidebar />
-      <section className="flex-1 p-8 overflow-y-auto max-w-2xl">
+    <AppShell>
+      <section className="p-4 md:p-8 w-full max-w-3xl">
         <BackToDashboard />
 
         <h1 className="text-2xl font-bold mb-1">Bookmarks</h1>
@@ -111,11 +93,8 @@ export default function BookmarksPage() {
           Save wellness resources, articles, and prompts you want to revisit.
         </p>
 
-        {error && (
-          <p className="text-xs text-red-300 mb-3">{error}</p>
-        )}
+        {error && <p className="text-xs text-red-300 mb-3">{error}</p>}
 
-        {/* Form */}
         <form
           onSubmit={saveBookmark}
           className="panel-bg rounded-2xl p-4 mb-6 border border-red-900 space-y-2"
@@ -135,19 +114,18 @@ export default function BookmarksPage() {
           <textarea
             className="w-full px-3 py-2 rounded body-bg border border-red-900 text-sm"
             placeholder="Optional note"
-            rows={3}
+            rows={4}
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
           <button
             type="submit"
-            className="px-4 py-2 rounded accent-bg hover:opacity-90 text-sm font-semibold border accent-border"
+            className="w-full sm:w-auto px-4 py-2 rounded accent-bg hover:opacity-90 text-sm font-semibold border accent-border"
           >
             Save Bookmark
           </button>
         </form>
 
-        {/* List */}
         {loading ? (
           <p className="text-sm opacity-80">Loading bookmarks…</p>
         ) : bookmarks.length === 0 ? (
@@ -162,16 +140,14 @@ export default function BookmarksPage() {
                 rel="noopener noreferrer"
                 className="block card-bg rounded-xl p-3 border border-red-900 text-sm hover:opacity-90"
               >
-                <p className="font-semibold">{b.label}</p>
+                <p className="font-semibold break-words">{b.label}</p>
                 <p className="text-xs text-red-200 break-all">{b.url}</p>
-                {b.note && (
-                  <p className="text-xs opacity-90 mt-1">{b.note}</p>
-                )}
+                {b.note && <p className="text-xs opacity-90 mt-1 break-words">{b.note}</p>}
               </a>
             ))}
           </div>
         )}
       </section>
-    </main>
+    </AppShell>
   );
 }

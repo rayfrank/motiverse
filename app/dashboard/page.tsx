@@ -106,10 +106,7 @@ export default function DashboardPage() {
     setQuote(QUOTES[idx]);
   };
 
-  const handleEmployeeChange = (
-    field: keyof EmployeeInfo,
-    value: string
-  ) => {
+  const handleEmployeeChange = (field: keyof EmployeeInfo, value: string) => {
     setEditEmployee((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -120,7 +117,6 @@ export default function DashboardPage() {
     try {
       const ref = doc(db, "employees", user.uid);
       await setDoc(ref, editEmployee, { merge: true });
-      // Once saved, reflect at the top
       setEmployee(editEmployee);
     } catch (err) {
       console.error("Failed to save employee info", err);
@@ -132,19 +128,21 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <main className="flex h-screen body-bg text-white items-center justify-center">
+      <main className="flex min-h-screen body-bg text-white items-center justify-center">
         <p className="text-sm opacity-80">Loading your Motiverse...</p>
       </main>
     );
   }
 
-  // Use saved employee info if available, otherwise the editing state
   const displayEmployee = employee ?? editEmployee;
 
   return (
-    <main className="flex h-screen body-bg text-white">
+    // ✅ Mobile: stacked layout. Desktop: sidebar + content side-by-side.
+    <main className="min-h-screen body-bg text-white md:flex">
       <Sidebar />
-      <section className="flex-1 p-8 overflow-y-auto">
+
+      {/* ✅ Mobile-friendly padding + prevent horizontal squeeze/scroll */}
+      <section className="flex-1 p-4 md:p-8 overflow-y-auto overflow-x-hidden">
         {/* Employee strip at top */}
         <div className="panel-bg rounded-2xl p-4 grid sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-6 border border-red-900">
           <Info label="Department" value={displayEmployee.department || "—"} />
@@ -165,6 +163,7 @@ export default function DashboardPage() {
               Welcome back. Here&apos;s a little motivation for you:
             </p>
           </div>
+
           <div className="panel-bg rounded-xl px-4 py-3 border border-red-900 max-w-xl">
             <p className="text-sm italic">“{quote}”</p>
             <button
@@ -292,7 +291,7 @@ function LabeledInput({
     <label className="flex flex-col gap-1">
       <span className="text-xs font-semibold">{label}</span>
       <input
-        className="px-3 py-2 rounded body-bg border border-red-900 text-xs"
+        className="px-3 py-2 rounded body-bg border border-red-900 text-xs w-full"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}

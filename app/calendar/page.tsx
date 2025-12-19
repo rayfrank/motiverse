@@ -2,23 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sidebar } from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { BackToDashboard } from "@/components/BackToDashboard";
 import { auth, db } from "@/lib/firebaseClient";
-import {
-  addDoc,
-  collection,
-  onSnapshot,
-  query,
-  where,
-  Timestamp,
-} from "firebase/firestore";
+import { addDoc, collection, onSnapshot, query, where, Timestamp } from "firebase/firestore";
 
 type CalendarEvent = {
   id: string;
   title: string;
   category: string;
-  date: string; // "yyyy-mm-dd"
+  date: string;
   userId: string;
   createdAt: Timestamp;
 };
@@ -37,7 +30,6 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Watch auth, then subscribe to this user's events
   useEffect(() => {
     const unsubAuth = auth.onAuthStateChanged((user) => {
       if (!user) {
@@ -47,18 +39,13 @@ export default function CalendarPage() {
 
       setUserId(user.uid);
 
-      const eventsRef = collection(db, "events");
-      const q = query(eventsRef, where("userId", "==", user.uid));
+      const q = query(collection(db, "events"), where("userId", "==", user.uid));
 
       const unsubEvents = onSnapshot(
         q,
         (snap) => {
           const list: CalendarEvent[] = [];
-          snap.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...(docSnap.data() as any) });
-          });
-
-          // sort by date ascending in memory
+          snap.forEach((docSnap) => list.push({ id: docSnap.id, ...(docSnap.data() as any) }));
           list.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
           setEvents(list);
           setLoading(false);
@@ -81,11 +68,10 @@ export default function CalendarPage() {
     if (!userId || !title.trim() || !date) return;
 
     try {
-      const eventsRef = collection(db, "events");
-      await addDoc(eventsRef, {
+      await addDoc(collection(db, "events"), {
         title: title.trim(),
         category,
-        date, // "yyyy-mm-dd"
+        date,
         userId,
         createdAt: Timestamp.now(),
       });
@@ -100,9 +86,8 @@ export default function CalendarPage() {
   };
 
   return (
-    <main className="flex h-screen body-bg text-white">
-      <Sidebar />
-      <section className="flex-1 p-8 overflow-y-auto">
+    <AppShell>
+      <section className="p-4 md:p-8">
         <BackToDashboard />
 
         <h1 className="text-2xl font-bold mb-1">Calendar</h1>
@@ -110,14 +95,11 @@ export default function CalendarPage() {
           Track wellbeing check-ins, focus blocks, and important dates.
         </p>
 
-        {error && (
-          <p className="text-xs text-red-300 mb-3">{error}</p>
-        )}
+        {error && <p className="text-xs text-red-300 mb-3">{error}</p>}
 
-        {/* Add event */}
         <form
           onSubmit={addEvent}
-          className="panel-bg rounded-2xl p-4 mb-6 border border-red-900 grid md:grid-cols-[2fr,1fr,1fr,auto] gap-2 items-center"
+          className="panel-bg rounded-2xl p-4 mb-6 border border-red-900 grid grid-cols-1 md:grid-cols-[2fr,1fr,1fr,auto] gap-2 items-center w-full max-w-4xl"
         >
           <input
             className="px-3 py-2 rounded body-bg border border-red-900 text-sm"
@@ -145,42 +127,33 @@ export default function CalendarPage() {
 
           <button
             type="submit"
-            className="px-4 py-2 rounded accent-bg hover:opacity-90 text-sm font-semibold border accent-border"
+            className="w-full md:w-auto px-4 py-2 rounded accent-bg hover:opacity-90 text-sm font-semibold border accent-border"
           >
             Add
           </button>
         </form>
 
-        {/* Events list */}
         {loading ? (
           <p className="text-sm opacity-80">Loading events…</p>
         ) : events.length === 0 ? (
-          <p className="text-sm opacity-80">
-            No events yet. Add your first wellness event above.
-          </p>
+          <p className="text-sm opacity-80">No events yet. Add your first event above.</p>
         ) : (
-          <div className="space-y-2 max-w-xl">
+          <div className="space-y-2 w-full max-w-2xl">
             {events.map((ev) => (
               <div
                 key={ev.id}
-                className="card-bg rounded-xl p-3 border border-red-900 text-sm flex justify-between"
+                className="card-bg rounded-xl p-3 border border-red-900 text-sm flex flex-col sm:flex-row sm:justify-between gap-2"
               >
-                <div>
-                  <p className="font-semibold">{ev.title}</p>
-                  <p className="text-xs text-red-200">
-                    {ev.category}
-                  </p>
+                <div className="min-w-0">
+                  <p className="font-semibold break-words">{ev.title}</p>
+                  <p className="text-xs text-red-200">{ev.category}</p>
                 </div>
-                <p className="text-xs">
-                  {ev.date ||
-                    (ev.createdAt &&
-                      ev.createdAt.toDate().toLocaleDateString())}
-                </p>
+                <p className="text-xs">{ev.date}</p>
               </div>
             ))}
           </div>
         )}
       </section>
-    </main>
+    </AppShell>
   );
 }

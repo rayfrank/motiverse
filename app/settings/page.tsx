@@ -1,260 +1,376 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sidebar } from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
+import { BackToDashboard } from "@/components/BackToDashboard";
 import { auth, db } from "@/lib/firebaseClient";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
-type ThemeName = "red" | "midnight" | "forest";
+type ThemeMode = "dark" | "midnight" | "light";
 
 type UserSettings = {
-  enablePrompts: boolean;
-  enableReminders: boolean;
-  reminderTime: string; // "09:00"
-  theme: ThemeName;
-  accentColor: string;
+  themeMode: ThemeMode;
+  accent: "red" | "blue" | "orange" | "purple" | "green";
+  reduceMotion: boolean;
+  compactMode: boolean;
+  showMotivationOnDashboard: boolean;
+  showEmployeeStrip: boolean;
 };
 
-const defaultSettings: UserSettings = {
-  enablePrompts: true,
-  enableReminders: true,
-  reminderTime: "09:00",
-  theme: "red",
-  accentColor: "#ef4444", // Tailwind red-500
+const DEFAULTS: UserSettings = {
+  themeMode: "dark",
+  accent: "red",
+  reduceMotion: false,
+  compactMode: false,
+  showMotivationOnDashboard: true,
+  showEmployeeStrip: true,
 };
 
-const THEME_OPTIONS: { id: ThemeName; label: string; preview: string }[] = [
-  { id: "red", label: "Motiverse Red", preview: "#7f1d1d" },
-  { id: "midnight", label: "Midnight", preview: "#020617" },
-  { id: "forest", label: "Forest", preview: "#064e3b" },
+const SETTINGS_KEY = "motiverse_settings_v1";
+
+const ACCENTS: Array<UserSettings["accent"]> = [
+  "red",
+  "blue",
+  "orange",
+  "purple",
+  "green",
 ];
 
-function applyThemeToDocument(settings: UserSettings) {
-  if (typeof document === "undefined") return;
+function applyThemeToDom(settings: UserSettings) {
+  // Matches your globals.css variables:
+  // --bg-color, --panel-color, --card-color, --accent-color
   const root = document.documentElement;
 
-  const themeMap: Record<ThemeName, { bg: string; panel: string; card: string }> =
-    {
-      red: {
-        bg: "#2a0000",
-        panel: "#400000",
-        card: "#550000",
-      },
-      midnight: {
-        bg: "#020617",
-        panel: "#020617",
-        card: "#111827",
-      },
-      forest: {
-        bg: "#022c22",
-        panel: "#064e3b",
-        card: "#065f46",
-      },
-    };
+  const themes: Record<ThemeMode, Record<string, string>> = {
+    dark: {
+      "--bg-color": "#2a0000",
+      "--panel-color": "#400000",
+      "--card-color": "#550000",
+    },
+    midnight: {
+      "--bg-color": "#060816",
+      "--panel-color": "#0c1230",
+      "--card-color": "#101a3e",
+    },
+    light: {
+      "--bg-color": "#f7f7fb",
+      "--panel-color": "#ffffff",
+      "--card-color": "#ffffff",
+    },
+  };
 
-  const theme = themeMap[settings.theme] ?? themeMap.red;
+  const accents: Record<UserSettings["accent"], string> = {
+    red: "#770000",
+    blue: "#2563eb",
+    orange: "#f97316",
+    purple: "#a855f7",
+    green: "#22c55e",
+  };
 
-  root.style.setProperty("--bg-color", theme.bg);
-  root.style.setProperty("--panel-color", theme.panel);
-  root.style.setProperty("--card-color", theme.card);
-  root.style.setProperty("--accent-color", settings.accentColor || "#ef4444");
+  // Apply theme variables
+  Object.entries(themes[settings.themeMode]).forEach(([k, v]) =>
+    root.style.setProperty(k, v)
+  );
+
+  // Apply accent variable
+  root.style.setProperty("--accent-color", accents[settings.accent]);
+
+  // Optional toggles using data attributes
+  root.dataset.compact = settings.compactMode ? "1" : "0";
+  root.dataset.reduceMotion = settings.reduceMotion ? "1" : "0";
 }
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [settings, setSettings] = useState<UserSettings | null>(null);
+
+  const [userId, setUserId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<UserSettings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string>("");
 
+  const accentPreview = useMemo(() => settings.accent, [settings.accent]);
+
+  // Auth gate
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged(async (user) => {
-      if (!user) {
+    const unsub = auth.onAuthStateChanged((u) => {
+      if (!u) {
         router.push("/login");
         return;
       }
-
-      const ref = doc(db, "settings", user.uid);
-      const snap = await getDoc(ref);
-
-      if (snap.exists()) {
-        const s = { ...defaultSettings, ...(snap.data() as any) } as UserSettings;
-        setSettings(s);
-        applyThemeToDocument(s);
-      } else {
-        setSettings(defaultSettings);
-        applyThemeToDocument(defaultSettings);
-      }
-
-      setLoading(false);
+      setUserId(u.uid);
     });
-
     return () => unsub();
   }, [router]);
 
+  // Load settings: localStorage first (instant), then Firestore
   useEffect(() => {
-    if (settings) applyThemeToDocument(settings);
-  }, [settings?.theme, settings?.accentColor]);
+    if (!userId) return;
 
-  const updateField = <K extends keyof UserSettings>(
-    key: K,
-    value: UserSettings[K]
-  ) => {
-    if (!settings) return;
-    setSettings({ ...settings, [key]: value });
-  };
-
-  const saveSettings = async () => {
-    const user = auth.currentUser;
-    if (!user || !settings) return;
-
-    setSaving(true);
+    // 1) local cache
     try {
-      const ref = doc(db, "settings", user.uid);
-      await setDoc(ref, settings, { merge: true });
-    } catch (err) {
-      console.error("Failed to save settings", err);
-      alert("Could not save settings. Check console for details.");
+      const cached = localStorage.getItem(SETTINGS_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached) as Partial<UserSettings>;
+        const merged = { ...DEFAULTS, ...parsed };
+        setSettings(merged);
+        applyThemeToDom(merged);
+      } else {
+        applyThemeToDom(DEFAULTS);
+      }
+    } catch {
+      applyThemeToDom(DEFAULTS);
+    }
+
+    // 2) Firestore
+    (async () => {
+      try {
+        const ref = doc(db, "settings", userId);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data() as Partial<UserSettings>;
+          const merged = { ...DEFAULTS, ...data };
+          setSettings(merged);
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
+          applyThemeToDom(merged);
+        }
+      } catch (e) {
+        console.error("Failed to load settings:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [userId]);
+
+  // Apply live on change + update local cache
+  useEffect(() => {
+    if (loading) return;
+    applyThemeToDom(settings);
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch { }
+  }, [settings, loading]);
+
+  const saveToFirestore = async () => {
+    if (!userId) return;
+    setSaving(true);
+    setStatus("");
+    try {
+      const ref = doc(db, "settings", userId);
+      await setDoc(
+        ref,
+        {
+          ...settings,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setStatus("Saved successfully.");
+    } catch (e) {
+      console.error("Failed to save settings:", e);
+      setStatus("Failed to save. Check console / rules.");
     } finally {
       setSaving(false);
+      setTimeout(() => setStatus(""), 2500);
     }
   };
 
-  if (loading || !settings) {
+  const reset = () => {
+    setSettings(DEFAULTS);
+    setStatus("Reset to default.");
+    setTimeout(() => setStatus(""), 2000);
+  };
+
+  if (loading) {
     return (
-      <main className="flex h-screen body-bg text-white items-center justify-center">
-        <p className="text-sm opacity-80">Loading your settings…</p>
+      <main className="min-h-[100dvh] body-bg text-white flex items-center justify-center">
+        <p className="text-sm opacity-80">Loading settings…</p>
       </main>
     );
   }
 
   return (
-    <main className="flex h-screen body-bg text-white">
-      <Sidebar />
-      <section className="flex-1 p-8 overflow-y-auto max-w-2xl">
-        <h1 className="text-2xl font-bold mb-2">Settings</h1>
-        <p className="text-sm text-red-200 mb-6">
-          Control how Motiverse looks and how often it nudges you.
-        </p>
+    <AppShell>
+      <section className="p-4 md:p-8 w-full">
+        <BackToDashboard />
 
-        <div className="panel-bg rounded-2xl p-4 border border-red-900 space-y-5">
-          {/* Notifications */}
-          <SettingRow
-            title="Motivational Prompts"
-            description="Show motivational quotes and encouragement on your dashboard."
-          >
-            <input
-              type="checkbox"
-              checked={settings.enablePrompts}
-              onChange={(e) =>
-                updateField("enablePrompts", e.target.checked)
-              }
-            />
-          </SettingRow>
+        <div className="max-w-3xl">
+          <h1 className="text-2xl font-bold mb-1">Settings</h1>
+          <p className="text-sm text-red-200 mb-6">
+            Customize your Motiverse experience. Changes apply instantly.
+          </p>
 
-          <SettingRow
-            title="AI Reminders"
-            description="Send reminders to stretch, rest, or hydrate."
-          >
-            <input
-              type="checkbox"
-              checked={settings.enableReminders}
-              onChange={(e) =>
-                updateField("enableReminders", e.target.checked)
-              }
-            />
-          </SettingRow>
+          {status && (
+            <div className="mb-4 text-xs px-3 py-2 rounded border border-red-900 panel-bg">
+              {status}
+            </div>
+          )}
 
-          <SettingRow
-            title="Preferred reminder time"
-            description="Used for daily wellbeing reminders (local time)."
-          >
-            <input
-              type="time"
-              className="px-3 py-1 rounded body-bg border border-red-900 text-xs"
-              value={settings.reminderTime}
-              onChange={(e) =>
-                updateField("reminderTime", e.target.value)
-              }
-            />
-          </SettingRow>
+          {/* Appearance */}
+          <div className="panel-bg rounded-2xl p-4 border border-red-900 mb-6">
+            <h2 className="text-lg font-semibold mb-3">Appearance</h2>
 
-          {/* Theme */}
-          <div className="border-t border-red-900 pt-4 space-y-3">
-            <h2 className="text-sm font-semibold">Theme</h2>
-            <div className="flex flex-col gap-2">
-              {THEME_OPTIONS.map((opt) => (
-                <label
-                  key={opt.id}
-                  className="flex items-center justify-between text-sm cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="theme"
-                      checked={settings.theme === opt.id}
-                      onChange={() => updateField("theme", opt.id)}
-                    />
-                    <span>{opt.label}</span>
-                  </div>
-                  <span
-                    className="w-10 h-4 rounded-full border border-red-900"
-                    style={{ backgroundColor: opt.preview }}
-                  />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold block mb-1">
+                  Theme mode
                 </label>
-              ))}
+                <select
+                  className="w-full px-3 py-2 rounded body-bg border border-red-900 text-sm"
+                  value={settings.themeMode}
+                  onChange={(e) =>
+                    setSettings((s) => ({
+                      ...s,
+                      themeMode: e.target.value as ThemeMode,
+                    }))
+                  }
+                >
+                  <option value="dark">Dark (Motiverse Red)</option>
+                  <option value="midnight">Midnight</option>
+                  <option value="light">Light</option>
+                </select>
+                <p className="text-[11px] opacity-75 mt-1">
+                  Desktop keeps the sidebar. Mobile uses a top bar + drawer (if
+                  your Sidebar supports it).
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold block mb-1">
+                  Accent color
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {ACCENTS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setSettings((s) => ({ ...s, accent: c }))}
+                      className={`px-3 py-2 rounded border text-xs font-semibold ${settings.accent === c
+                          ? "accent-bg border accent-border"
+                          : "border-red-900"
+                        }`}
+                      type="button"
+                    >
+                      {c.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 text-xs opacity-90">
+                  Preview:
+                  <span className="ml-2 inline-flex items-center gap-2">
+                    <span className="px-2 py-1 rounded accent-bg border accent-border font-semibold">
+                      {accentPreview}
+                    </span>
+                    <span className="text-[11px] opacity-75">
+                      Buttons and highlights
+                    </span>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Accent color */}
-          <SettingRow
-            title="Accent color"
-            description="Used for buttons and highlights."
-          >
-            <input
-              type="color"
-              value={settings.accentColor}
-              onChange={(e) =>
-                updateField("accentColor", e.target.value)
-              }
-              className="w-10 h-6 p-0 border border-red-900 rounded"
-            />
-          </SettingRow>
+          {/* Preferences */}
+          <div className="panel-bg rounded-2xl p-4 border border-red-900 mb-6">
+            <h2 className="text-lg font-semibold mb-3">Preferences</h2>
 
-          <button
-            onClick={saveSettings}
-            disabled={saving}
-            className="mt-2 px-4 py-2 rounded accent-bg hover:opacity-90 disabled:opacity-60 font-semibold text-sm border accent-border"
-          >
-            {saving ? "Saving…" : "Save Settings"}
-          </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ToggleRow
+                label="Reduce motion"
+                desc="Helpful for accessibility and smoother mobile performance."
+                checked={settings.reduceMotion}
+                onChange={(v) => setSettings((s) => ({ ...s, reduceMotion: v }))}
+              />
+
+              <ToggleRow
+                label="Compact mode"
+                desc="Tighter spacing for small screens."
+                checked={settings.compactMode}
+                onChange={(v) => setSettings((s) => ({ ...s, compactMode: v }))}
+              />
+
+              <ToggleRow
+                label="Show dashboard motivation"
+                desc="Display motivational prompt card on dashboard."
+                checked={settings.showMotivationOnDashboard}
+                onChange={(v) =>
+                  setSettings((s) => ({ ...s, showMotivationOnDashboard: v }))
+                }
+              />
+
+              <ToggleRow
+                label="Show employee strip"
+                desc="Show saved employee details at the top of dashboard."
+                checked={settings.showEmployeeStrip}
+                onChange={(v) =>
+                  setSettings((s) => ({ ...s, showEmployeeStrip: v }))
+                }
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              onClick={saveToFirestore}
+              disabled={saving}
+              className="px-4 py-2 rounded accent-bg hover:opacity-90 disabled:opacity-60 font-semibold text-sm border accent-border"
+            >
+              {saving ? "Saving..." : "Save Settings"}
+            </button>
+
+            <button
+              onClick={reset}
+              type="button"
+              className="px-4 py-2 rounded border border-red-900 text-sm hover:opacity-90"
+            >
+              Reset
+            </button>
+          </div>
+
+          <p className="text-[11px] opacity-70 mt-3">
+            Settings are stored per user in Firestore and cached locally for
+            faster loading next time.
+          </p>
         </div>
-
-        <p className="mt-4 text-[11px] text-red-200">
-          In a real deployment, these preferences can drive email or push
-          notifications and consistent theming across all devices.
-        </p>
       </section>
-    </main>
+    </AppShell>
   );
 }
 
-function SettingRow({
-  title,
-  description,
-  children,
+function ToggleRow({
+  label,
+  desc,
+  checked,
+  onChange,
 }: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
+  label: string;
+  desc: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 text-sm">
-      <div>
-        <p className="font-semibold">{title}</p>
-        <p className="text-xs opacity-80">{description}</p>
+    <div className="card-bg rounded-xl p-3 border border-red-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{label}</p>
+          <p className="text-[11px] opacity-75">{desc}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onChange(!checked)}
+          className={`shrink-0 w-12 h-7 rounded-full border transition relative ${checked ? "accent-bg accent-border" : "border-red-900"
+            }`}
+          aria-pressed={checked}
+        >
+          <span
+            className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white transition ${checked ? "left-6" : "left-1"
+              }`}
+          />
+        </button>
       </div>
-      <div className="mt-1">{children}</div>
     </div>
   );
 }

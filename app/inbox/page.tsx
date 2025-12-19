@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sidebar } from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { BackToDashboard } from "@/components/BackToDashboard";
 import { auth, db } from "@/lib/firebaseClient";
 import {
@@ -42,7 +42,6 @@ export default function InboxPage() {
   const [body, setBody] = useState("");
   const [tab, setTab] = useState<"received" | "sent">("received");
 
-  // 1) Watch auth just to know who we are
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((user) => {
       if (!user || !user.email) {
@@ -56,49 +55,35 @@ export default function InboxPage() {
     return () => unsub();
   }, [router]);
 
-  // 2) Subscribe to inbox messages when we know the email
   useEffect(() => {
     if (!userEmail) return;
 
     const inboxRef = collection(db, "inbox");
-
-    // no orderBy -> no composite index needed
     const qReceived = query(inboxRef, where("to", "==", userEmail));
     const qSent = query(inboxRef, where("from", "==", userEmail));
 
     const handleSnapshot =
       (setter: (items: InboxMessage[]) => void) =>
-      (snap: QuerySnapshot<DocumentData>) => {
-        const items: InboxMessage[] = [];
-        snap.forEach((docSnap) => {
-          items.push({ id: docSnap.id, ...(docSnap.data() as any) });
-        });
-        // newest first in memory
-        items.sort(
-          (a, b) =>
-            (b.createdAt?.toMillis?.() || 0) -
-            (a.createdAt?.toMillis?.() || 0)
-        );
-        setter(items);
-      };
+        (snap: QuerySnapshot<DocumentData>) => {
+          const items: InboxMessage[] = [];
+          snap.forEach((docSnap) => {
+            items.push({ id: docSnap.id, ...(docSnap.data() as any) });
+          });
+          items.sort(
+            (a, b) =>
+              (b.createdAt?.toMillis?.() || 0) -
+              (a.createdAt?.toMillis?.() || 0)
+          );
+          setter(items);
+        };
 
     const handleError = (err: any) => {
       console.error("Inbox snapshot error:", err);
-      setError(
-        "Failed to load messages. Check Firestore rules / indexes / console."
-      );
+      setError("Failed to load messages. Check Firestore rules / indexes / console.");
     };
 
-    const unsubReceived = onSnapshot(
-      qReceived,
-      handleSnapshot(setReceived),
-      handleError
-    );
-    const unsubSent = onSnapshot(
-      qSent,
-      handleSnapshot(setSent),
-      handleError
-    );
+    const unsubReceived = onSnapshot(qReceived, handleSnapshot(setReceived), handleError);
+    const unsubSent = onSnapshot(qSent, handleSnapshot(setSent), handleError);
 
     return () => {
       unsubReceived();
@@ -106,7 +91,6 @@ export default function InboxPage() {
     };
   }, [userEmail]);
 
-  // 3) Send a new message
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const user = auth.currentUser;
@@ -114,8 +98,7 @@ export default function InboxPage() {
     if (!toEmail.trim() || !title.trim() || !body.trim()) return;
 
     try {
-      const inboxRef = collection(db, "inbox");
-      await addDoc(inboxRef, {
+      await addDoc(collection(db, "inbox"), {
         from: user.email,
         to: toEmail.trim(),
         title: title.trim(),
@@ -127,18 +110,16 @@ export default function InboxPage() {
       setToEmail("");
       setTitle("");
       setBody("");
-      setTab("sent"); // jump to sent so you see it
+      setTab("sent");
     } catch (err) {
       console.error("Failed to send message:", err);
       setError("Failed to send message. Check console / rules.");
     }
   };
 
-  // 4) Toggle read/unread on received messages
   const toggleRead = async (msg: InboxMessage) => {
     try {
-      const ref = doc(db, "inbox", msg.id);
-      await updateDoc(ref, { read: !msg.read });
+      await updateDoc(doc(db, "inbox", msg.id), { read: !msg.read });
     } catch (err) {
       console.error("Failed to update message:", err);
       setError("Failed to update message. Check console / rules.");
@@ -148,9 +129,8 @@ export default function InboxPage() {
   const list = tab === "received" ? received : sent;
 
   return (
-    <main className="flex h-screen body-bg text-white">
-      <Sidebar />
-      <section className="flex-1 p-8 overflow-y-auto">
+    <AppShell>
+      <section className="p-4 md:p-8">
         <BackToDashboard />
 
         <h1 className="text-2xl font-bold mb-2">Inbox</h1>
@@ -158,19 +138,17 @@ export default function InboxPage() {
           Motivational nudges, reminders, and messages from your team.
         </p>
 
-        {error && (
-          <p className="mb-3 text-xs text-red-300">{error}</p>
-        )}
+        {error && <p className="mb-3 text-xs text-red-300">{error}</p>}
 
-        {/* Compose */}
+        {/* Compose (stacks naturally on mobile) */}
         <form
           onSubmit={sendMessage}
-          className="mb-6 space-y-2 max-w-xl panel-bg rounded-2xl p-4 border border-red-900"
+          className="mb-6 space-y-2 w-full max-w-2xl panel-bg rounded-2xl p-4 border border-red-900"
         >
           <p className="text-xs opacity-75">
-            Send a message by email. It will appear in their Motiverse inbox if
-            they log in with that email.
+            Send a message by email. It will appear in their Motiverse inbox if they log in with that email.
           </p>
+
           <input
             className="w-full px-3 py-2 rounded body-bg border border-red-900 text-sm"
             placeholder="To (email)"
@@ -186,35 +164,31 @@ export default function InboxPage() {
           <textarea
             className="w-full px-3 py-2 rounded body-bg border border-red-900 text-sm"
             placeholder="Message"
-            rows={3}
+            rows={4}
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
           <button
             type="submit"
-            className="px-4 py-2 rounded accent-bg hover:opacity-90 text-sm font-semibold border accent-border"
+            className="w-full sm:w-auto px-4 py-2 rounded accent-bg hover:opacity-90 text-sm font-semibold border accent-border"
           >
             Send Message
           </button>
         </form>
 
-        {/* Tabs */}
-        <div className="mb-3 flex gap-2 text-xs">
+        {/* Tabs (wrap on mobile) */}
+        <div className="mb-3 flex gap-2 text-xs flex-wrap">
           <button
             onClick={() => setTab("received")}
-            className={`px-3 py-1 rounded-full border ${
-              tab === "received"
-                ? "accent-bg accent-border"
-                : "border-red-900"
-            }`}
+            className={`px-3 py-1 rounded-full border ${tab === "received" ? "accent-bg accent-border" : "border-red-900"
+              }`}
           >
             Received ({received.length})
           </button>
           <button
             onClick={() => setTab("sent")}
-            className={`px-3 py-1 rounded-full border ${
-              tab === "sent" ? "accent-bg accent-border" : "border-red-900"
-            }`}
+            className={`px-3 py-1 rounded-full border ${tab === "sent" ? "accent-bg accent-border" : "border-red-900"
+              }`}
           >
             Sent ({sent.length})
           </button>
@@ -228,36 +202,28 @@ export default function InboxPage() {
             No {tab === "received" ? "received" : "sent"} messages yet.
           </p>
         ) : (
-          <div className="space-y-3 max-w-2xl">
+          <div className="space-y-3 w-full max-w-3xl">
             {list.map((msg) => (
               <div
                 key={msg.id}
-                className={`rounded-2xl p-4 border text-sm ${
-                  msg.read
-                    ? "body-bg border-red-900 opacity-70"
-                    : "card-bg border-red-700"
-                }`}
+                className={`rounded-2xl p-4 border text-sm ${msg.read ? "body-bg border-red-900 opacity-70" : "card-bg border-red-700"
+                  }`}
               >
-                <div className="flex justify-between items-center mb-1">
-                  <div>
-                    <h2 className="font-semibold">{msg.title}</h2>
-                    <p className="text-[11px] text-red-200">
-                      {tab === "received"
-                        ? `From: ${msg.from}`
-                        : `To: ${msg.to}`}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1">
+                  <div className="min-w-0">
+                    <h2 className="font-semibold break-words">{msg.title}</h2>
+                    <p className="text-[11px] text-red-200 break-words">
+                      {tab === "received" ? `From: ${msg.from}` : `To: ${msg.to}`}
                     </p>
                   </div>
                   {tab === "received" && (
-                    <button
-                      onClick={() => toggleRead(msg)}
-                      className="text-[11px] underline"
-                    >
+                    <button onClick={() => toggleRead(msg)} className="text-[11px] underline self-start sm:self-auto">
                       Mark as {msg.read ? "unread" : "read"}
                     </button>
                   )}
                 </div>
-                <p className="opacity-90 mb-1">{msg.body}</p>
-                <p className="mt-1 text-[10px] text-red-200">
+                <p className="opacity-90 break-words">{msg.body}</p>
+                <p className="mt-2 text-[10px] text-red-200">
                   {msg.createdAt?.toDate?.().toLocaleString?.() ?? ""}
                 </p>
               </div>
@@ -265,6 +231,6 @@ export default function InboxPage() {
           </div>
         )}
       </section>
-    </main>
+    </AppShell>
   );
 }

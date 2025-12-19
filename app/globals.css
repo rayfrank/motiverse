@@ -2,20 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Default theme: Motiverse red */
+/* =========================================================
+   Motiverse Theme Variables
+   These are the ONLY vars the Settings page changes:
+   --bg-color, --panel-color, --card-color, --accent-color
+   ========================================================= */
+
 :root {
   --bg-color: #2a0000;
   --panel-color: #400000;
   --card-color: #550000;
   --accent-color: #770000;
+
+  /* Useful extras */
+  --text-color: #ffffff;
+  --muted-color: rgba(255, 255, 255, 0.85);
+  --border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* =========================================================
+   Base / Reset
+   ========================================================= */
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   background-color: var(--bg-color);
-  color: #ffffff;
+  color: var(--text-color);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
 }
 
-/* Helper classes that read from the theme variables */
+/* Mobile safe-area support (notches) */
+body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Make inputs consistent on mobile */
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+/* Prevent iOS zoom on input focus (keep 16px minimum) */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* Links */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* =========================================================
+   Helper classes used across your app
+   ========================================================= */
+
 .body-bg {
   background-color: var(--bg-color);
 }
@@ -28,10 +82,94 @@ body {
   background-color: var(--card-color);
 }
 
+/* Accent styles */
 .accent-bg {
   background-color: var(--accent-color);
 }
 
 .accent-border {
   border-color: var(--accent-color);
+}
+
+/* Optional generic border helper */
+.soft-border {
+  border-color: var(--border-color);
+}
+
+/* =========================================================
+   Better mobile behavior for full-height pages
+   (fixes Safari's address bar height issues)
+   ========================================================= */
+
+.min-screen {
+  min-height: 100dvh;
+}
+
+/* =========================================================
+   Compact mode (Settings toggles data-compact="1")
+   ========================================================= */
+
+[data-compact="1"] .panel-bg {
+  padding: 0.75rem !important;
+}
+
+[data-compact="1"] .card-bg {
+  padding: 0.75rem !important;
+}
+
+/* =========================================================
+   Reduce motion (Settings toggles data-reduce-motion="1")
+   ========================================================= */
+
+[data-reduce-motion="1"] * {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+/* =========================================================
+   Scrollbar styling (nice on desktop, harmless on mobile)
+   ========================================================= */
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+/* =========================================================
+   Small utility improvements for your inputs in forms
+   ========================================================= */
+
+input,
+select,
+textarea {
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+/* Buttons feel clickable */
+button {
+  cursor: pointer;
+}
+
+/* Disabled */
+button:disabled {
+  cursor: not-allowed;
 }
